@@ -1,0 +1,53 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: billing }
+  template:
+    metadata:
+      labels: { app: billing }
+    spec:
+      initContainers:
+        - name: migrate
+          image: billing:replace-with-version
+          command: ["npm", "run", "migrate"]
+          envFrom:
+            - secretRef: { name: billing-secrets }
+      containers:
+        - name: api
+          image: billing:replace-with-version
+          ports:
+            - containerPort: 3002
+          envFrom:
+            - secretRef: { name: billing-secrets }
+          readinessProbe:
+            httpGet: { path: /ready, port: 3002 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /health, port: 3002 }
+            initialDelaySeconds: 10
+            periodSeconds: 15
+        - name: outbox-worker
+          image: billing:replace-with-version
+          command: ["npm", "run", "outbox-worker"]
+          envFrom:
+            - secretRef: { name: billing-secrets }
+        - name: email-worker
+          image: billing:replace-with-version
+          command: ["npm", "run", "email-worker"]
+          envFrom:
+            - secretRef: { name: billing-secrets }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: billing
+spec:
+  selector: { app: billing }
+  ports:
+    - port: 3002
+      targetPort: 3002

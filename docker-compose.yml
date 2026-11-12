@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: billing
+      POSTGRES_USER: billing
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}
+    ports:
+      - "5433:5432"
+    volumes:
+      - billing_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U billing -d billing"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+  billing:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
+    ports:
+      - "3002:3002"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: sh -c "npm run migrate && npm start"
+  outbox-worker:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
+    depends_on:
+      billing:
+        condition: service_started
+    command: sh -c "npm run migrate && npm run outbox-worker"
+  email-worker:
+    build: .
+    env_file: .env
+    environment:
+      DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
+    depends_on:
+      billing:
+        condition: service_started
+    command: sh -c "npm run migrate && npm run email-worker"
+volumes:
+  billing_pg:
