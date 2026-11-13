@@ -8,7 +8,8 @@
     "test": "node --test dist/test/*.test.js",
     "migrate": "node dist/src/migrate.js",
     "email-worker": "node dist/src/email-worker.js",
-    "outbox-worker": "node dist/src/outbox-worker.js"
+    "outbox-worker": "node dist/src/outbox-worker.js",
+    "check:architecture": "node scripts/check-architecture.cjs"
   },
   "dependencies": {
     "amqplib": "^0.10.9",

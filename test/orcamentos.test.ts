@@ -7,11 +7,12 @@ import { AddressInfo } from 'node:net';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import { Pool } from 'pg';
-import { createOrcamentoRoutes, OrcamentoController, presentOrcamento } from '../src/orcamentos';
+import { createOrcamentoRoutes, presentOrcamento } from '../src/orcamentos';
+import { createOrcamentoController } from '../src/infrastructure/composition-root/orcamento-container';
 
-const item = { id: 'service-1', kind: 'service', nome: 'Troca de oleo', descricao: 'Substituicao', tipo: null, quantidade: 1, precoCents: 15000 };
+const item = { id: 'service-1', kind: 'service' as const, nome: 'Troca de oleo', descricao: 'Substituicao', tipo: null, quantidade: 1, precoCents: 15000 };
 test('preserves the original Portuguese estimate response and currency units', () => {
-    const result = presentOrcamento({ id: 'estimate', order_id: 'order', version: 2, status: 'APPROVED', total_cents: '15000', items: [item], expires_at: new Date(), created_at: new Date(), decision_at: null });
+    const result = presentOrcamento({ id: 'estimate', orderId: 'order', version: 2, status: 'APPROVED', totalCents: 15000, items: [item], expiresAt: new Date(), createdAt: new Date(), decisionAt: null });
     assert.equal(result.status, 'APROVADO'); assert.equal(result.valorTotal, 150); assert.equal(result.versao, 2);
     assert.deepEqual(result.pecas, []); assert.equal(result.itensServicos[0].preco, 150);
 });
@@ -28,7 +29,7 @@ test('restores legacy estimate HTTP contracts against PostgreSQL', { skip: !proc
         await admin.query(`CREATE SCHEMA ${schema}`);
         const migrations = resolve(__dirname, '../../migrations');
         for (const name of (await readdir(migrations)).filter(name => name.endsWith('.sql')).sort()) await pool.query(await readFile(resolve(migrations,name),'utf8'));
-        const app = express(); app.use(express.json()); app.use('/api', createOrcamentoRoutes(new OrcamentoController(pool)));
+        const app = express(); app.use(express.json()); app.use('/api', createOrcamentoRoutes(createOrcamentoController(pool)));
         server = app.listen(0,'127.0.0.1'); await new Promise<void>(done => server!.once('listening',done));
         const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
         const headers = { 'x-internal-api-key':'billing-test', 'content-type':'application/json' };

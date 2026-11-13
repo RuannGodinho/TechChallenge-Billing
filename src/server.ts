@@ -1,4 +1,5 @@
-import { createOrcamentoRoutes, OrcamentoController } from './orcamentos';
+import { createOrcamentoRoutes } from './infrastructure/http/orcamento-routes';
+import { createOrcamentoController } from './infrastructure/composition-root/orcamento-container';
 import express, { Request, Response, NextFunction } from 'express';
 import { timingSafeEqual } from 'node:crypto';
 import { pool } from './db';
@@ -30,7 +31,7 @@ export function createBillingApp(
             res.status(503).json({ error: 'database unavailable' });
         }
     });
-    app.use('/api', createOrcamentoRoutes(new OrcamentoController(pool), (req, res, next) => { void estimates.create(req, res).then(() => undefined).catch(next); }));
+    app.use('/api', createOrcamentoRoutes(createOrcamentoController(pool), (req, res, next) => { void estimates.create(req, res).then(() => undefined).catch(next); }));
     app.use(publicPayments);
     app.use('/internal', auth, internalPayments, createEstimateRoutes(estimates));
     return app;
