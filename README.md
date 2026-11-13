@@ -1,3 +1,5 @@
+> Endpoint migration update: original Portuguese `/api` paths are restored in their owning service. See [restored endpoints and configuration](docs/ENDPOINT-MIGRATION.md). The extraction notes below describe earlier limitations; the endpoint inventory and execution-completion behavior are superseded by that document.
+
 # Billing service (work in progress)
 
 Independent TypeScript/Express Billing service with its own PostgreSQL database. This repository currently implements estimate snapshots, approval/rejection, the Service Orders estimate endpoints, transactional outbox records, and an SMTP email worker. It is not yet a complete billing or payment service.
