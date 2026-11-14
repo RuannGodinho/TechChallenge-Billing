@@ -9,7 +9,8 @@
     "migrate": "node dist/src/migrate.js",
     "email-worker": "node dist/src/email-worker.js",
     "outbox-worker": "node dist/src/outbox-worker.js",
-    "check:architecture": "node scripts/check-architecture.cjs"
+    "check:architecture": "node scripts/check-architecture.cjs",
+    "execution-consumer": "node dist/src/execution-consumer.js"
   },
   "dependencies": {
     "amqplib": "^0.10.9",

@@ -11,7 +11,11 @@ export class RegisterExecutionUseCase {
             : 'duplicate';
     }
 
-    canRegister(estimate: { status: string } | undefined): boolean {
-        return !!estimate && estimate.status === 'APPROVED';
+    canRegister(estimate: { status: string; createdAt?: Date; decisionAt?: Date | null } | undefined, occurredAt?: Date): boolean {
+        if (!estimate || estimate.status !== 'APPROVED') return false;
+        if (!occurredAt) return true;
+        // A delayed event must not authorize a newer estimate created/approved after execution.
+        return (!estimate.createdAt || estimate.createdAt.getTime() <= occurredAt.getTime())
+            && (!estimate.decisionAt || estimate.decisionAt.getTime() <= occurredAt.getTime());
     }
 }

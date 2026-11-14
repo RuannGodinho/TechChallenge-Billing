@@ -17,6 +17,7 @@ services:
   billing:
     build: .
     env_file: .env
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
     ports:
@@ -25,23 +26,79 @@ services:
       postgres:
         condition: service_healthy
     command: sh -c "npm run migrate && npm start"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3002/ready').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
   outbox-worker:
     build: .
     env_file: .env
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
     depends_on:
       billing:
-        condition: service_started
-    command: sh -c "npm run migrate && npm run outbox-worker"
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: npm run outbox-worker
+  execution-consumer:
+    build: .
+    env_file: .env
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
+    depends_on:
+      billing:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    command: npm run execution-consumer
   email-worker:
     build: .
     env_file: .env
+    restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://billing:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD}@postgres:5432/billing
     depends_on:
       billing:
-        condition: service_started
-    command: sh -c "npm run migrate && npm run email-worker"
+        condition: service_healthy
+      mailpit:
+        condition: service_healthy
+    command: npm run email-worker
+  rabbitmq:
+    image: rabbitmq:4-management
+    hostname: oficina-rabbitmq
+    container_name: oficina-rabbitmq
+    restart: unless-stopped
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER:?Set RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Set RABBITMQ_PASSWORD}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_VHOST:-oficina}
+    ports:
+      - "${RABBITMQ_BIND_ADDRESS:-127.0.0.1}:5672:5672"
+      - "127.0.0.1:15672:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD-SHELL", "rabbitmq-diagnostics -q ping && rabbitmq-diagnostics -q check_port_connectivity"]
+      interval: 5s
+      timeout: 10s
+      retries: 20
+      start_period: 20s
+  mailpit:
+    image: axllent/mailpit:v1.27.4
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
 volumes:
   billing_pg:
+  rabbitmq_data:
+    # Reuse the volume from the previous standalone local broker.
+    name: ${RABBITMQ_DATA_VOLUME:-oficina-messaging_rabbitmq_data}

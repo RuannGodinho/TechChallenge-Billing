@@ -1,5 +1,7 @@
 # Refactoring the restored endpoints
 
+> This records the refactoring before the RabbitMQ implementation. See [current asynchronous completion and messaging setup](RABBITMQ.md).
+
 The original HTTP verbs, paths, payloads, and response shapes are preserved. Endpoint restoration was committed and pushed before this refactoring:
 
 | Repository | Branch | Endpoint commit |

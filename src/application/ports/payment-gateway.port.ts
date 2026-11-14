@@ -18,7 +18,7 @@ export type CheckoutPreparation =
     | { kind: 'database_unavailable' | 'preparation_failed' | 'wrong_order' | 'approval_required' | 'attempt_exists' };
 
 export interface PaymentGatewayPort {
-    registerExecution(orderId: string, messageId: string): Promise<ExecutionResult>;
+    registerExecution(orderId: string, messageId: string, occurredAt?: Date): Promise<ExecutionResult>;
     prepareCheckout(orderId: string, key: string): Promise<CheckoutPreparation>;
     saveCheckout(attemptId: string, order: ProviderOrder): Promise<CheckoutSummary | null>;
     findPaidAttempt(orderId: string): Promise<{ id: string; providerOrderId: string | null } | null>;

@@ -23,7 +23,7 @@ const reconcilePayment = new ReconcilePaymentUseCase();
 export class PaymentPostgresGateway implements PaymentGatewayPort {
     constructor(private readonly pool: Pool) {}
 
-    async registerExecution(orderId: string, messageId: string): Promise<ExecutionResult> {
+    async registerExecution(orderId: string, messageId: string, occurredAt?: Date): Promise<ExecutionResult> {
         const client = await this.pool.connect().catch(() => null);
         if (!client) return 'database_unavailable';
         try {
@@ -36,8 +36,8 @@ export class PaymentPostgresGateway implements PaymentGatewayPort {
                 return 'conflict';
             }
             if (state === 'new') {
-                const estimate = await client.query('SELECT id,status FROM estimates WHERE order_id=$1 ORDER BY version DESC LIMIT 1', [orderId]);
-                if (!registerExecution.canRegister(estimate.rows[0])) {
+                const estimate = await client.query('SELECT id,status,created_at,decision_at FROM estimates WHERE order_id=$1 ORDER BY version DESC LIMIT 1', [orderId]);
+                if (!registerExecution.canRegister(estimate.rows[0] ? {status:estimate.rows[0].status,createdAt:estimate.rows[0].created_at,decisionAt:estimate.rows[0].decision_at} : undefined, occurredAt)) {
                     await client.query('ROLLBACK');
                     return 'approval_required';
                 }
