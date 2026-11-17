@@ -5,7 +5,7 @@ import { PublishOutboxUseCase } from '../../application/usecases/publish-outbox.
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 export const executionQueues = ['service-orders.execution', 'billing.execution'] as const;
 export async function declareTopology(channel: Channel) {
-    for (const exchange of ['billing.events', 'execution.events']) {
+    for (const exchange of ['billing.events', 'execution.events', 'saga.commands', 'saga.results']) {
         await channel.assertExchange(exchange, 'topic', { durable: true });
         await channel.assertExchange(`${exchange}.dlx`, 'direct', { durable: true });
     }
@@ -13,6 +13,9 @@ export async function declareTopology(channel: Channel) {
         ['service-orders.billing', 'billing.events', ['estimate.#', 'payment.#']],
         ['service-orders.execution', 'execution.events', ['execution.completed']],
         ['billing.execution', 'execution.events', ['execution.completed']],
+        ['billing.saga.commands','saga.commands',['billing.*']],
+        ['execution.saga.commands','saga.commands',['execution.*']],
+        ['service-orders.saga.results','saga.results',['saga.result']],
     ] as const) {
         await channel.assertQueue(`${queue}.dlq`, { durable: true });
         await channel.bindQueue(`${queue}.dlq`, `${exchange}.dlx`, queue);

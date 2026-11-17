@@ -12,6 +12,8 @@ COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --chown=node:node package*.json ./
 COPY --chown=node:node migrations ./migrations
+COPY --chown=node:node src/postgres-init ./src/postgres-init
+COPY --chown=node:node run-workers.cjs ./run-workers.cjs
 USER node
 EXPOSE 3002
 CMD ["npm", "start"]

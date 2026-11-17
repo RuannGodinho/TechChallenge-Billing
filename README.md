@@ -1,3 +1,5 @@
+> Saga orquestrada: [fluxo, compensações, configuração e testes](docs/SAGA.md).
+
 > RabbitMQ setup and asynchronous execution completion are implemented. See [local messaging setup, queues and tests](docs/RABBITMQ.md). Older extraction notes below are historical.
 
 > Endpoint migration update: original Portuguese `/api` paths are restored in their owning service. See [restored endpoints and configuration](docs/ENDPOINT-MIGRATION.md). The extraction notes below describe earlier limitations; the endpoint inventory and execution-completion behavior are superseded by that document.
@@ -37,3 +39,29 @@ Call `POST /internal/orders/:id/checkout` with `x-internal-api-key` and a UUID `
 Configure an HTTPS Mercado Pago Orders notification URL ending in `/webhooks/mercado-pago`. The endpoint validates the `x-signature`, `x-request-id`, and `data.id` query parameter; fetches the order using server-side credentials; checks the reference, amount, currency, accredited status and paid amount; and commits payment confirmation, notification deduplication and a `payment.confirmed` outbox event atomically. The caller of the execution endpoint and consumer of payment events must use authenticated, restricted infrastructure. Refunded, partially refunded, and charged-back provider orders are recorded as REVERSED; a reversal following confirmation emits `payment.reversed`. Reversed payments require manual resolution. Service Orders checks the authenticated payment-status endpoint before delivery; Billing refreshes the provider status for this check and fails closed if it cannot be verified.
 
 The contracts follow the [Mercado Pago Orders API](https://www.mercadopago.com.br/developers/en/reference/online-payments/checkout-pro-orders/create-order/post) and [notification documentation](https://www.mercadopago.com.br/developers/en/docs/checkout-pro-orders/notifications). The checkout, migration, webhook, database concurrency, and event integration have not been verified against a live provider or PostgreSQL.
+
+## Development seed
+
+`docker compose up -d --build` runs `npm run seed` automatically before starting the API (after database initialization and migrations). Set `SEED_ENABLED=false` in `.env` to skip demo data. The seeds insert missing fixtures only; restarting does not overwrite edited records, reset stock, or renew expired estimates.
+
+Billing populates `estimates` with two pending snapshots: oil/filter replacement (R$ 365.00) and brake pad replacement (R$ 400.00). The demo order references are `000000000000000000000001` and `000000000000000000000002`; they do not create OS records in Service Orders. Item IDs match Execution's seeded catalog. Demo snapshots emit no outbox events or emails, and create no payment attempts or execution-completion records. Use the normal APIs with a real OS ID to test the integrated business flow. The script is `src/postgres-init/seed.js`; outside Docker run `npm run build` first, apply migrations, and load `DATABASE_URL` into the environment.
+
+To run again manually with the configured Compose environment:
+
+```bash
+docker compose exec billing npm run seed
+```
+
+## Compact Docker Compose
+
+The default Compose now starts five permanent containers: `billing`, `workers`, `postgres`, `rabbitmq`, and `mailpit`. The supervised `workers` container runs outbox publishing, execution consumption, email delivery, and the Saga as separate Node processes. If one worker exits, the group restarts; the API runs separately.
+
+To replace the previous individual worker containers, preserving existing volumes:
+
+```bash
+docker compose up -d --build --remove-orphans
+docker compose ps
+docker compose logs -f workers
+```
+
+The same optimization is present in the Downloads checkout. Use one checkout consistently: both have the Compose project name `techchallenge-billing` and manage the same local stack. Worker processes still have their own memory; container reduction does not guarantee proportional RAM savings.

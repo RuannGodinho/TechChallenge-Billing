@@ -1,7 +1,7 @@
 import { EstimateItem } from './estimate.entity';
 import { assessEstimateDecision } from './estimate-decision';
 
-export type OrcamentoStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED';
+export type OrcamentoStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'EXPIRED' | 'CANCELLED';
 export interface OrcamentoSnapshot {
     id: string;
     orderId: string;
