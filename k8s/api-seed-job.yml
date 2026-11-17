@@ -1,0 +1,23 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: billing-seed-job
+spec:
+  template:
+    spec:
+      containers:
+        - name: seed
+          image: 'ruanngodinho/techchallenge-billing:latest'
+          command:
+            - npm
+            - run
+            - seed
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          imagePullPolicy: Always
+      imagePullSecrets:
+        - name: dockerhub-cred
+      restartPolicy: OnFailure

@@ -22,7 +22,7 @@ Compose starts the email worker automatically. For local delivery capture, use `
 
 ## Kubernetes foundation
 
-`k8s/billing.yaml` contains a service and deployment with a migration init container and email worker. Supply a versioned image and create `billing-secrets` with `DATABASE_URL`, `INTERNAL_API_KEY`, `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, and `ESTIMATE_EMAIL_TO`; include SMTP credentials if required. PostgreSQL and messaging infrastructure must be provisioned separately. This manifest and migration flow have not been exercised in a cluster.
+Os manifests em `k8s/` separam API, HPA e workers agrupados, preservando o init container de migrations. Configuração, secrets, ordem de deploy e limites de escala: [Kubernetes](docs/KUBERNETES.md).
 
 ## RabbitMQ outbox publisher
 

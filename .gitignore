@@ -2,3 +2,6 @@ node_modules/
 dist/
 .env
 coverage/
+
+# Runtime credentials are supplied by GitHub Actions.
+k8s/secrets/api-secrets.yml

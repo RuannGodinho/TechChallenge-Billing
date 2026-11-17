@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing-workers
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: billing-workers
+  template:
+    metadata:
+      labels:
+        app: billing-workers
+    spec:
+      containers:
+        - name: workers
+          image: 'ruanngodinho/techchallenge-billing:latest'
+          command:
+            - node
+            - run-workers.cjs
+            - dist/src/outbox-worker.js
+            - dist/src/execution-consumer.js
+            - dist/src/email-worker.js
+            - dist/src/infrastructure/messaging/saga-worker.js
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          imagePullPolicy: Always
+      imagePullSecrets:
+        - name: dockerhub-cred

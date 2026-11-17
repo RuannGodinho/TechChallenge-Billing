@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: billing
+spec:
+  selector:
+    matchLabels:
+      app: billing
+  template:
+    metadata:
+      labels:
+        app: billing
+    spec:
+      containers:
+        - name: api
+          image: 'ruanngodinho/techchallenge-billing:latest'
+          ports:
+            - containerPort: 3002
+          resources:
+            requests:
+              memory: 128Mi
+              cpu: 100m
+            limits:
+              memory: 256Mi
+              cpu: 500m
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3002
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            timeoutSeconds: 3
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 3002
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 3
+            failureThreshold: 3
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          imagePullPolicy: Always
+      imagePullSecrets:
+        - name: dockerhub-cred
+      initContainers:
+        - name: migrate
+          image: 'ruanngodinho/techchallenge-billing:latest'
+          command:
+            - npm
+            - run
+            - migrate
+          envFrom:
+            - configMapRef:
+                name: billing-config
+            - secretRef:
+                name: billing-secrets
+          imagePullPolicy: Always

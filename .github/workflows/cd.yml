@@ -1,0 +1,178 @@
+name: CD
+
+on:
+  workflow_run:
+    workflows: [Billing CI]
+    types: [completed]
+    branches: [main, develop, release]
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type "yes" to confirm deploy
+        required: false
+        default: ""
+
+concurrency:
+  group: cd-billing-eks
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  deploy:
+    if: >
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push')
+      || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Confirm manual deploy
+        if: github.event_name == 'workflow_dispatch' && inputs.confirm != 'yes'
+        run: |
+          echo "::error::Manual deploy requires confirm=yes."
+          exit 1
+
+      - name: Verify CI passed (manual deploy)
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH="${{ github.ref_name }}"
+          CONCLUSION=$(gh run list \
+            --repo "${{ github.repository }}" \
+            --workflow=ci.yml \
+            --branch="$BRANCH" \
+            --limit=1 \
+            --json conclusion \
+            --jq '.[0].conclusion')
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "::error::Latest CI run on ${BRANCH} did not succeed (conclusion: ${CONCLUSION:-none}). Run CI first."
+            exit 1
+          fi
+          echo "Latest CI on ${BRANCH}: success"
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.ref }}
+
+      - name: Resolve image tag
+        id: image
+        run: |
+          BRANCH="${{ github.event.workflow_run.head_branch || github.ref_name }}"
+          if [ "$BRANCH" = "release" ]; then
+            echo "tag=homolog" >> "$GITHUB_OUTPUT"
+            echo "environment=homolog" >> "$GITHUB_OUTPUT"
+          else
+            echo "tag=latest" >> "$GITHUB_OUTPUT"
+            echo "environment=production" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: docker/login-action@v4
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_PASSWORD }}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          tags: ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }}
+          push: true
+
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-region: ${{ vars.TF_AWS_REGION || 'us-east-1' }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+
+      - name: Configure kubectl
+        run: |
+          aws eks update-kubeconfig \
+            --region "${{ vars.TF_AWS_REGION || 'us-east-1' }}" \
+            --name "${{ vars.TF_CLUSTER_NAME || 'techchallenge-eks' }}"
+
+      - name: Deploy billing secrets and config
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          INTERNAL_API_KEY: ${{ secrets.INTERNAL_API_KEY }}
+          GATEWAY_TRUST_SECRET: ${{ secrets.GATEWAY_TRUST_SECRET }}
+          RABBITMQ_URL: ${{ secrets.RABBITMQ_URL }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_FROM: ${{ secrets.SMTP_FROM }}
+          ESTIMATE_EMAIL_TO: ${{ secrets.ESTIMATE_EMAIL_TO }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASS: ${{ secrets.SMTP_PASS }}
+          MERCADO_PAGO_ACCESS_TOKEN: ${{ secrets.MERCADO_PAGO_ACCESS_TOKEN }}
+          MERCADO_PAGO_WEBHOOK_SECRET: ${{ secrets.MERCADO_PAGO_WEBHOOK_SECRET }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_PASSWORD: ${{ secrets.DOCKERHUB_PASSWORD }}
+        run: |
+          python3 - <<'PY'
+          import json, os
+          required = ["DATABASE_URL","INTERNAL_API_KEY","GATEWAY_TRUST_SECRET","RABBITMQ_URL","SMTP_HOST","SMTP_PORT","SMTP_FROM","ESTIMATE_EMAIL_TO"]
+          missing = [key for key in required if not os.environ.get(key)]
+          if missing:
+              raise SystemExit('Missing GitHub secrets: ' + ', '.join(missing))
+          data = {key: os.environ.get(key, '') for key in ["DATABASE_URL","INTERNAL_API_KEY","GATEWAY_TRUST_SECRET","RABBITMQ_URL","SMTP_HOST","SMTP_PORT","SMTP_FROM","ESTIMATE_EMAIL_TO","JWT_SECRET","SMTP_USER","SMTP_PASS","MERCADO_PAGO_ACCESS_TOKEN","MERCADO_PAGO_WEBHOOK_SECRET"]}
+          payload = {'apiVersion': 'v1', 'kind': 'Secret', 'metadata': {'name': 'billing-secrets'}, 'type': 'Opaque', 'stringData': data}
+          with open(os.path.join(os.environ['RUNNER_TEMP'], 'billing-secrets.json'), 'w') as output:
+              json.dump(payload, output)
+          PY
+          kubectl apply -f k8s/secrets/Api-configmap.yml
+          kubectl apply -f "$RUNNER_TEMP/billing-secrets.json"
+          kubectl create secret docker-registry dockerhub-cred \
+            --docker-username="$DOCKERHUB_USERNAME" \
+            --docker-password="$DOCKERHUB_PASSWORD" \
+            --dry-run=client -o yaml | kubectl apply -f -
+
+      - name: Wait for database and broker from TechChallenge-infra-db
+        run: |
+          kubectl get svc postgres-service rabbitmq-service
+          kubectl rollout status deployment/postgres-deployment --timeout=180s
+          kubectl rollout status deployment/rabbitmq-deployment --timeout=180s
+
+      - name: Apply service instrumentation using existing New Relic operator
+        run: |
+          kubectl wait --for=condition=established crd/instrumentations.newrelic.com --timeout=60s
+          kubectl apply -f k8s/instrumentation.yaml
+
+      - name: Deploy API and existing HPA pattern
+        run: |
+          kubectl set image --local -f k8s/Api-deployment.yml \
+            api=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} migrate=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} \
+            -o yaml | kubectl apply -f -
+          kubectl apply -f k8s/Api-service.yml
+          kubectl apply -f k8s/API-hpa.yml
+          kubectl rollout restart deployment/billing
+          kubectl rollout status deployment/billing --timeout=180s
+
+      - name: Deploy grouped workers
+        run: |
+          kubectl set image --local -f k8s/workers-deployment.yml \
+            workers=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} -o yaml | kubectl apply -f -
+          kubectl rollout restart deployment/billing-workers
+          kubectl rollout status deployment/billing-workers --timeout=180s
+
+      - name: Run seed job using the existing one-time pattern
+        run: |
+          if ! kubectl get job billing-seed-job >/dev/null 2>&1; then
+            kubectl set image --local -f k8s/api-seed-job.yml \
+              seed=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} -o yaml | kubectl apply -f -
+          fi
+          kubectl wait --for=condition=complete job/billing-seed-job --timeout=120s
+
+      - name: Write job summary
+        run: |
+          {
+            echo "## billing deploy"
+            echo "Image: ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }}"
+            kubectl get deploy billing billing-workers
+            kubectl get svc billing
+            kubectl get hpa billing-hpa
+          } >> "$GITHUB_STEP_SUMMARY"

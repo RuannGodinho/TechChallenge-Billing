@@ -1,0 +1,17 @@
+apiVersion: newrelic.com/v1beta2
+kind: Instrumentation
+metadata:
+  name: billing-instrumentation
+  namespace: newrelic
+spec:
+  agent:
+    language: nodejs
+    image: 'newrelic/newrelic-node-init:13-nodejs20x'
+    env:
+      - name: NEW_RELIC_LOG
+        value: stderr
+      - name: NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED
+        value: 'false'
+  podLabelSelector:
+    matchLabels:
+      app: billing
