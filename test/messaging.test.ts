@@ -1,5 +1,4 @@
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
 import { EventEmitter } from 'node:events';
 import { ConfirmChannel } from 'amqplib';
 import { PublishOutboxUseCase } from '../src/application/usecases/publish-outbox.usecase';

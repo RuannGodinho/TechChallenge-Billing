@@ -1,6 +1,5 @@
 import { strict as assert } from 'node:assert';
 import { createHmac } from 'node:crypto';
-import { test } from 'node:test';
 import { MercadoPagoClient, verifyWebhookSignature } from '../src/mercado-pago';
 
 test('validates a webhook signature and rejects tampering', () => {

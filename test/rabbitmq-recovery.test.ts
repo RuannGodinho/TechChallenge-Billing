@@ -1,10 +1,9 @@
 import { strict as assert } from 'node:assert';
-import { test, mock } from 'node:test';
 import { EventEmitter } from 'node:events';
 import amqp from 'amqplib';
 import { runConsumer } from '../src/infrastructure/messaging/rabbitmq';
 
-for (const rejectClose of [false, true]) test(`reconnects after broker cancellation when channel close rejects = ${rejectClose}`, { timeout: 8000 }, async () => {
+for (const rejectClose of [false, true]) test(`reconnects after broker cancellation when channel close rejects = ${rejectClose}`, async () => {
     const control = { stopping: false };
     let connectionsOpened = 0, handled = 0, acked = 0, firstConnectionClosed = 0;
     let received!: () => void;
@@ -23,7 +22,7 @@ for (const rejectClose of [false, true]) test(`reconnects after broker cancellat
         });
         return connection;
     });
-    mock.method(amqp, 'connect', async () => connections[connectionsOpened++]);
+    jest.spyOn(amqp, 'connect').mockImplementation(async () => connections[connectionsOpened++] as unknown as amqp.ChannelModel);
     const timer = setTimeout(() => { control.stopping = true; received(); }, 4000);
     const running = runConsumer('amqp://broker.test/oficina', 'billing.execution', content => JSON.parse(content.toString()), async event => {
         assert.deepEqual(event, { id: 'recovered' }); handled++; control.stopping = true; received();
@@ -39,6 +38,6 @@ for (const rejectClose of [false, true]) test(`reconnects after broker cancellat
         clearTimeout(timer);
         control.stopping = true;
         await running;
-        mock.restoreAll();
+        jest.restoreAllMocks();
     }
-});
+}, 8000);

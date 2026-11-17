@@ -1,5 +1,4 @@
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
 import { RegisterExecutionUseCase } from '../src/application/usecases/register-execution.usecase';
 
 test('identifica execução nova, repetida e conflitante', () => {

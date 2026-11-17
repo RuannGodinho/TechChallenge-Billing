@@ -1,5 +1,4 @@
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
 import { PoolClient } from 'pg';
 import { reconcile } from '../src/payments';
 import { CheckoutOrder } from '../src/mercado-pago';
