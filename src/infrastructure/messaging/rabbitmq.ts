@@ -23,6 +23,18 @@ export async function declareTopology(channel: Channel) {
         for (const binding of bindings) await channel.bindQueue(queue, exchange, binding);
         await channel.assertQueue(`${queue}.retry`, { durable: true, arguments: { 'x-message-ttl': 1000, 'x-dead-letter-exchange': '', 'x-dead-letter-routing-key': queue } });
     }
+    // Keep independent publication copies after operational consumers acknowledge.
+    // Match operational bindings so auditing cannot route otherwise unknown events.
+    for (const [exchange, bindings] of [
+        ['billing.events', ['estimate.#', 'payment.#']],
+        ['execution.events', ['execution.completed']],
+        ['saga.commands', ['billing.*', 'execution.*']],
+        ['saga.results', ['saga.result']],
+    ] as const) {
+        const queue = `audit.${exchange}`;
+        await channel.assertQueue(queue, { durable: true, arguments: { 'x-message-ttl': 24 * 60 * 60 * 1000 } });
+        for (const binding of bindings) await channel.bindQueue(queue, exchange, binding);
+    }
 }
 
 /** A broker confirm is insufficient when the broker returns an unroutable message. */
