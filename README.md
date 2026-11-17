@@ -33,6 +33,8 @@ npm run coverage -- --runInBand
 
 Os relatórios ficam em `coverage/lcov-report/index.html` (HTML) e `coverage/lcov.info` (SonarQube). A pipeline CI também executa a suíte com coverage. Os testes HTTP usam portas locais temporárias e simulam o Mercado Pago, sem cobranças reais. Os testes PostgreSQL são opcionais: configure `TEST_BILLING_DATABASE_URL` (contratos HTTP) e `TEST_BILLING_PG_URL` (seed) para habilitá-los; eles criam e removem schemas isolados.
 
+Jest exige pelo menos **81% em linhas, statements, funções e branches**, inclusive na suíte padrão sem PostgreSQL. A descoberta inclui `src` e `test`, contabilizando também fontes não importados pelos testes. DTOs, declarações e contratos de ports sem lógica ficam fora do cálculo; as exclusões também estão configuradas no SonarQube. Controllers, gateways e regras de negócio continuam na cobertura.
+
 Use o mesmo SonarQube do projeto principal em `http://localhost:9000`. Crie o projeto com a chave `techchallenge-billing`, gere um token com permissão de análise e preencha `SONAR_TOKEN` no `.env` (copie `.env.example` se necessário). Depois de gerar o coverage:
 
 ```bash
