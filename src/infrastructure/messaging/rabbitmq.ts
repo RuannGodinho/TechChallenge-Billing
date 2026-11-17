@@ -114,7 +114,12 @@ export async function runConsumer<T>(url: string, queue: string, parse: (content
                 }
             };
             const consumer = await channel.consume(queue, message => {
-                if (!message) return;
+                if (!message) {
+                    // Broker-side cancellation does not close the channel by itself.
+                    closed = true;
+                    void channel.close().catch(() => undefined);
+                    return;
+                }
                 active = processMessage(message);
                 void active.catch(error => {
                     console.error('consumer_channel_retry', error instanceof Error ? error.message : 'Channel failure');
