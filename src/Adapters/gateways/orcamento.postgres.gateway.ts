@@ -28,7 +28,13 @@ export class OrcamentoPostgresGateway implements OrcamentoRepository {
                 current: mapOrcamento(row),
                 context: { latestId: latest.rows[0]?.id, blocked: !!payment.rowCount || !!execution.rowCount },
                 save: async (next: OrcamentoSnapshot, decisionChanged: boolean) => {
-                    const saved = await client.query<OrcamentoRow>('UPDATE estimates SET order_id=$2,version=$3,status=$4,total_cents=$5,expires_at=$6,decision_at=$7 WHERE id=$1 RETURNING *', [id,next.orderId,next.version,next.status,next.totalCents,next.expiresAt,next.decisionAt]);
+                    // pg converts timestamps to millisecond-precision Dates. Preserve the
+                    // stored microseconds when expiry was not changed by this operation.
+                    const expiryChanged = next.expiresAt.getTime() !== row.expires_at.getTime();
+                    const saved = await client.query<OrcamentoRow>(
+                        'UPDATE estimates SET order_id=$2,version=$3,status=$4,total_cents=$5,expires_at=CASE WHEN $8::boolean THEN $6::timestamptz ELSE expires_at END,decision_at=$7 WHERE id=$1 RETURNING *',
+                        [id,next.orderId,next.version,next.status,next.totalCents,next.expiresAt,next.decisionAt,expiryChanged],
+                    );
                     if (next.orderId !== previousOrder) await client.query("UPDATE outbox SET payload=jsonb_set(payload,'{orderId}',to_jsonb($2::text)) WHERE aggregate_id=$1 AND published_at IS NULL", [id,next.orderId]);
                     if (decisionChanged) await client.query('INSERT INTO outbox(id,aggregate_id,kind,payload) VALUES($1,$2,$3,$4)', [randomUUID(),id,`estimate.${next.status.toLowerCase()}`,JSON.stringify({estimateId:id,orderId:next.orderId})]);
                     return mapOrcamento(saved.rows[0]);
