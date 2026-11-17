@@ -22,8 +22,10 @@ export function createPaymentController(dependencies: {
     workflows: PaymentWorkflows;
     providerConfigured: () => boolean;
     verifyWebhook: (signature: string, requestId: string, dataId: string) => boolean;
+    log?: (level: 'info' | 'error', message: string, fields: Record<string, unknown>) => void;
 }) {
     const { workflows } = dependencies;
+    const log = dependencies.log ?? (() => undefined);
 
     const executionComplete = async (req: Request, res: Response) => {
         const messageId = req.body?.messageId;
@@ -42,8 +44,12 @@ export function createPaymentController(dependencies: {
         if (!dependencies.providerConfigured()) return res.status(503).json({ error: 'payment provider not configured' });
 
         const result = await workflows.checkout(req.params.id, key);
-        if (result.kind === 'success') return res.json(result.payment);
+        if (result.kind === 'success') {
+            log('info', 'checkout_created', { orderId: req.params.id, paymentAttemptId: result.payment.id, status: result.payment.status });
+            return res.json(result.payment);
+        }
         if (result.kind === 'provider_unavailable') {
+            log('error', 'checkout_failed', { orderId: req.params.id, paymentAttemptId: result.attemptId, reason: result.kind });
             return res.status(502).json({ error: 'checkout unavailable; retry using the same idempotency-key', attemptId: result.attemptId });
         }
         const [status, error] = checkoutErrors[result.kind];
@@ -54,7 +60,7 @@ export function createPaymentController(dependencies: {
         try {
             return res.json({ paid: await workflows.isPaid(req.params.id) });
         } catch (error) {
-            console.error('payment status check failed', error);
+            log('error', 'payment_status_failed', { orderId: req.params.id, error });
             return res.status(503).json({ error: 'payment status unavailable' });
         }
     };
@@ -77,7 +83,7 @@ export function createPaymentController(dependencies: {
             }
             return res.json(result.payment);
         } catch (error) {
-            console.error('manual payment reconciliation failed', error);
+            log('error', 'payment_reconcile_failed', { paymentAttemptId: req.params.id, error });
             return res.status(503).json({ error: 'reconciliation unavailable' });
         }
     };
@@ -92,9 +98,10 @@ export function createPaymentController(dependencies: {
         }
         try {
             await workflows.processNotification(dataId, String(req.body.id));
+            log('info', 'payment_webhook_processed', { providerOrderId: dataId, notificationId: String(req.body.id) });
             return res.status(200).end();
         } catch (error) {
-            console.error('payment reconciliation failed', error);
+            log('error', 'payment_webhook_failed', { providerOrderId: dataId, notificationId: String(req.body.id), error });
             return res.status(503).json({ error: 'reconciliation unavailable' });
         }
     };

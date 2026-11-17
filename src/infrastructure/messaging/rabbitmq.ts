@@ -1,6 +1,7 @@
 import amqp, { Channel, ConfirmChannel, ConsumeMessage, Options } from 'amqplib';
 import { IntegrationEvent, EventOutbox } from '../../application/ports/integration-event';
 import { PublishOutboxUseCase } from '../../application/usecases/publish-outbox.usecase';
+import { integrationFields, logIntegration } from '../logging/integration-logger';
 
 const delay = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
 export const executionQueues = ['service-orders.execution', 'billing.execution'] as const;
@@ -75,16 +76,19 @@ export async function runOutboxPublisher(url: string, exchange: string, outbox: 
         try {
             connection = await amqp.connect(brokerUrl(url));
             let closed = false;
-            connection.on('error', error => console.error('rabbitmq_connection_error', error.message));
+            connection.on('error', error => logIntegration('error', 'rabbitmq_connection_error', { error }));
             connection.on('close', () => { closed = true; });
             const channel = await connection.createConfirmChannel();
-            channel.on('error', error => console.error('rabbitmq_channel_error', error.message));
+            channel.on('error', error => logIntegration('error', 'rabbitmq_channel_error', { error }));
             channel.on('close', () => { closed = true; });
             await declareTopology(channel);
-            const useCase = new PublishOutboxUseCase(outbox, { publish: event => publishConfirmed(channel, exchange, event.eventType, Buffer.from(JSON.stringify(event)), { messageId: event.messageId, type: event.eventType }) });
+            const useCase = new PublishOutboxUseCase(outbox, { publish: async event => {
+                await publishConfirmed(channel, exchange, event.eventType, Buffer.from(JSON.stringify(event)), { messageId: event.messageId, type: event.eventType });
+                logIntegration('info', 'message_published', { ...integrationFields(event), exchange });
+            } });
             while (!control.stopping && !closed) if (!await useCase.execute()) await delay(500);
             await channel.close().catch(() => undefined);
-        } catch (error) { console.error('outbox_publisher_retry', error instanceof Error ? error.message : 'Publication failed'); }
+        } catch (error) { logIntegration('error', 'outbox_publisher_retry', { error }); }
         finally { if (connection) await connection.close().catch(() => undefined); }
         if (!control.stopping) await delay(1500);
     }
@@ -96,18 +100,19 @@ export async function runConsumer<T>(url: string, queue: string, parse: (content
         try {
             connection = await amqp.connect(brokerUrl(url));
             let closed = false;
-            connection.on('error', error => console.error('rabbitmq_connection_error', error.message));
+            connection.on('error', error => logIntegration('error', 'rabbitmq_connection_error', { error }));
             connection.on('close', () => { closed = true; });
             const channel = await connection.createConfirmChannel();
-            channel.on('error', error => console.error('rabbitmq_channel_error', error.message));
+            channel.on('error', error => logIntegration('error', 'rabbitmq_channel_error', { error }));
             channel.on('close', () => { closed = true; });
             await declareTopology(channel); await channel.prefetch(1);
             let active: Promise<void> = Promise.resolve();
             const processMessage = async (message: ConsumeMessage) => {
+                const started = Date.now();
                 let event: T;
                 try { event = parse(message.content, message.properties.messageId); }
                 catch (error) {
-                    console.error('message_invalid', { queue, messageId: message.properties.messageId, error: error instanceof Error ? error.message : 'Invalid event' });
+                    logIntegration('error', 'message_invalid', { queue, messageId: message.properties.messageId, error });
                     if (!closed) channel.nack(message, false, false);
                     return;
                 }
@@ -116,9 +121,9 @@ export async function runConsumer<T>(url: string, queue: string, parse: (content
                 try {
                     await handle(event);
                     if (!closed) channel.ack(message);
-                    console.info('message_processed', { queue, messageId: message.properties.messageId, attempt });
+                    logIntegration('info', 'message_processed', { ...integrationFields(event), queue, messageId: message.properties.messageId, attempt, durationMs: Date.now() - started });
                 } catch (error) {
-                    console.error('message_processing_failed', { queue, messageId: message.properties.messageId, attempt, error: error instanceof Error ? error.message : 'Processing failed' });
+                    logIntegration('error', 'message_processing_failed', { ...integrationFields(event), queue, messageId: message.properties.messageId, attempt, durationMs: Date.now() - started, error });
                     if (closed) return;
                     if (attempt >= maxRetries) { channel.nack(message, false, false); return; }
                     await publishConfirmed(channel, '', `${queue}.retry`, message.content, { ...message.properties, headers: { ...message.properties.headers, 'x-retry-count': attempt + 1 } });
@@ -133,8 +138,8 @@ export async function runConsumer<T>(url: string, queue: string, parse: (content
                     return;
                 }
                 active = processMessage(message);
-                void active.catch(error => {
-                    console.error('consumer_channel_retry', error instanceof Error ? error.message : 'Channel failure');
+                return active.catch(error => {
+                    logIntegration('error', 'consumer_channel_retry', { error });
                     void channel.close().catch(() => undefined);
                 });
             }, { noAck: false });
@@ -142,7 +147,7 @@ export async function runConsumer<T>(url: string, queue: string, parse: (content
             if (!closed) await channel.cancel(consumer.consumerTag);
             await active.catch(() => undefined);
             if (!closed) await channel.close().catch(() => undefined);
-        } catch (error) { console.error('consumer_connection_retry', error instanceof Error ? error.message : 'Connection failed'); }
+        } catch (error) { logIntegration('error', 'consumer_connection_retry', { error }); }
         finally { if (connection) await connection.close().catch(() => undefined); }
         if (!control.stopping) await delay(1500);
     }
