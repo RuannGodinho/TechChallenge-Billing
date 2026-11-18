@@ -1,3 +1,5 @@
+> Documentação integrada: [arquitetura final dos microsserviços](docs/ARQUITETURA-FINAL-MICROSSERVICOS.md) e [fluxograma da ordem de serviço (Mermaid)](docs/FLUXO-ORDEM-DE-SERVICO.mmd).
+
 > Saga orquestrada: [fluxo, compensações, configuração e testes](docs/SAGA.md).
 
 > RabbitMQ setup and asynchronous execution completion are implemented. See [local messaging setup, queues and tests](docs/RABBITMQ.md). Older extraction notes below are historical.
