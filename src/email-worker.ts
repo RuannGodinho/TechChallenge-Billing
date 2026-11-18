@@ -1,5 +1,6 @@
 import nodemailer from 'nodemailer';
 import { pool } from './db';
+import { logIntegration } from './infrastructure/logging/integration-logger';
 
 async function run() {
  const { SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM, ESTIMATE_EMAIL_TO } = process.env;
@@ -22,16 +23,17 @@ async function run() {
    try {
     await transport.sendMail({ from: SMTP_FROM, to: ESTIMATE_EMAIL_TO, subject: `Orçamento ${row.version} - OS ${row.order_id}`, text: `Ordem: ${row.order_id}\n${items}\nTotal: R$ ${(Number(row.total_cents) / 100).toFixed(2)}\nVálido até: ${new Date(row.expires_at).toISOString()}`, messageId: `<estimate-${row.id}@billing.local>` });
     await client.query('UPDATE outbox SET email_sent_at=now(),email_attempts=email_attempts+1,email_last_error=NULL WHERE id=$1', [row.id]);
+    logIntegration('info', 'smtp_sent', { event: 'business', integration: 'smtp', orderId: row.order_id, messageId: row.id, versao: row.version });
    } catch (error) {
-    console.error('estimate email failed', error);
+    logIntegration('error', 'smtp_send_failed', { event: 'business', integration: 'smtp', orderId: row.order_id, messageId: row.id, error });
     await client.query('UPDATE outbox SET email_attempts=email_attempts+1,email_last_error=$2 WHERE id=$1', [row.id, 'SMTP delivery failed']);
    }
    await client.query('COMMIT');
-  } catch (error) { await client.query('ROLLBACK'); console.error('email worker failed', error); }
+  } catch (error) { await client.query('ROLLBACK'); logIntegration('error', 'email_worker_failed', { error }); }
   finally { client.release(); }
   await new Promise(resolve => setTimeout(resolve, 5000));
  }
  transport.close();
  await pool.end();
 }
-run().catch(error => { console.error(error); process.exitCode = 1; });
+run().catch(error => { logIntegration('error', 'email_worker_failed', { error }); process.exitCode = 1; });

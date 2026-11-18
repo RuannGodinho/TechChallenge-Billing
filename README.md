@@ -20,6 +20,29 @@ The database transaction writes an outbox record with each creation or decision.
 
 Compose starts the email worker automatically. For local delivery capture, use `SMTP_HOST=mailpit` and open http://localhost:8025. Configure the SMTP settings and `ESTIMATE_EMAIL_TO` for another provider. Outside Compose, apply migrations and run `npm run email-worker` in a separate process. Each estimate-created outbox record is sent independently of the message publisher. Failed delivery retries up to ten times; inspect `email_last_error` and `email_attempts` in `outbox` for exhausted items. SMTP provides at-least-once delivery: a crash after the provider accepts a message but before the database commit can cause a duplicate. The configured recipient is currently global, matching the legacy service; customer-specific recipient lookup remains to be integrated.
 
+## Testes, coverage e SonarQube
+
+O projeto usa Jest com `ts-jest` e coverage V8, seguindo o padrão do Service Orders. Não é necessário compilar antes de executar os testes.
+
+```bash
+npm ci
+npm run typecheck
+npm test -- --runInBand
+npm run coverage -- --runInBand
+```
+
+Os relatórios ficam em `coverage/lcov-report/index.html` (HTML) e `coverage/lcov.info` (SonarQube). A pipeline CI também executa a suíte com coverage. Os testes HTTP usam portas locais temporárias e simulam o Mercado Pago, sem cobranças reais. Os testes PostgreSQL são opcionais: configure `TEST_BILLING_DATABASE_URL` (contratos HTTP) e `TEST_BILLING_PG_URL` (seed) para habilitá-los; eles criam e removem schemas isolados.
+
+Jest exige pelo menos **81% em linhas, statements, funções e branches**, inclusive na suíte padrão sem PostgreSQL. A descoberta inclui `src` e `test`, contabilizando também fontes não importados pelos testes. DTOs, declarações e contratos de ports sem lógica ficam fora do cálculo; as exclusões também estão configuradas no SonarQube. Controllers, gateways e regras de negócio continuam na cobertura.
+
+Use o mesmo SonarQube do projeto principal em `http://localhost:9000`. Crie o projeto com a chave `techchallenge-billing`, gere um token com permissão de análise e preencha `SONAR_TOKEN` no `.env` (copie `.env.example` se necessário). Depois de gerar o coverage:
+
+```bash
+npm run sonar
+```
+
+O launcher usa o token do ambiente sem expansão de shell e propaga falhas do scanner. Assim como no principal, sem `SONAR_TOKEN` a análise é ignorada. O Sonar roda localmente; a pipeline não tenta acessar `localhost:9000` do desenvolvedor.
+
 ## Kubernetes foundation
 
 Os manifests em `k8s/` separam API, HPA e workers agrupados, preservando o init container de migrations. Configuração, secrets, ordem de deploy e limites de escala: [Kubernetes](docs/KUBERNETES.md).

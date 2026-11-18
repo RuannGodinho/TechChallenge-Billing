@@ -144,9 +144,10 @@ jobs:
 
       - name: Deploy API and existing HPA pattern
         run: |
-          kubectl set image --local -f k8s/Api-deployment.yml \
-            api=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} migrate=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} \
-            -o yaml | kubectl apply -f -
+          kubectl patch --local -f k8s/Api-deployment.yml --type=strategic \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"api","image":"ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }}"}],"initContainers":[{"name":"migrate","image":"ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }}"}]}}}}' \
+            -o yaml > "$RUNNER_TEMP/billing-api.yml"
+          kubectl apply -f "$RUNNER_TEMP/billing-api.yml"
           kubectl apply -f k8s/Api-service.yml
           kubectl apply -f k8s/API-hpa.yml
           kubectl rollout restart deployment/billing
@@ -154,16 +155,20 @@ jobs:
 
       - name: Deploy grouped workers
         run: |
-          kubectl set image --local -f k8s/workers-deployment.yml \
-            workers=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} -o yaml | kubectl apply -f -
+          kubectl patch --local -f k8s/workers-deployment.yml --type=strategic \
+            -p '{"spec":{"template":{"spec":{"containers":[{"name":"workers","image":"ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }}"}]}}}}' \
+            -o yaml > "$RUNNER_TEMP/billing-workers.yml"
+          kubectl apply -f "$RUNNER_TEMP/billing-workers.yml"
           kubectl rollout restart deployment/billing-workers
           kubectl rollout status deployment/billing-workers --timeout=180s
 
       - name: Run seed job using the existing one-time pattern
         run: |
           if ! kubectl get job billing-seed-job >/dev/null 2>&1; then
-            kubectl set image --local -f k8s/api-seed-job.yml \
-              seed=ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }} -o yaml | kubectl apply -f -
+            kubectl patch --local -f k8s/api-seed-job.yml --type=strategic \
+              -p '{"spec":{"template":{"spec":{"containers":[{"name":"seed","image":"ruanngodinho/techchallenge-billing:${{ steps.image.outputs.tag }}"}]}}}}' \
+              -o yaml > "$RUNNER_TEMP/billing-seed.yml"
+            kubectl apply -f "$RUNNER_TEMP/billing-seed.yml"
           fi
           kubectl wait --for=condition=complete job/billing-seed-job --timeout=120s
 

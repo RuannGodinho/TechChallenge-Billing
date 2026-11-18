@@ -1,5 +1,4 @@
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
 import { CheckCheckoutEligibilityUseCase } from '../src/application/usecases/check-checkout-eligibility.usecase';
 import { PrepareCheckoutUseCase } from '../src/application/usecases/prepare-checkout.usecase';
 

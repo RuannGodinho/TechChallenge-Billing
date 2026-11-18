@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert';
 import { AddressInfo } from 'node:net';
-import { test } from 'node:test';
+import { Server } from 'node:http';
 import { EstimateController } from '../src/Adapters/controllers/estimate.controller';
 import { createPaymentController } from '../src/Adapters/controllers/payment.controller';
 import { CheckoutAttempt, PaymentGatewayPort } from '../src/application/ports/payment-gateway.port';
@@ -9,18 +9,24 @@ import { PaymentWorkflows } from '../src/application/usecases/payment-workflows.
 import { ReconcilePaymentUseCase } from '../src/application/usecases/reconcile-payment.usecase';
 import { createBillingApp } from '../src/server';
 
-test('fluxo HTTP de orçamento, execução, checkout e confirmação', async t => {
+const oldKey = process.env.INTERNAL_API_KEY;
+let server: Server | undefined;
+afterEach(async () => {
+    try {
+        if (server) await new Promise<void>((resolve, reject) => server!.close(error => error ? reject(error) : resolve()));
+    } finally {
+        if (oldKey === undefined) delete process.env.INTERNAL_API_KEY;
+        else process.env.INTERNAL_API_KEY = oldKey;
+    }
+});
+
+test('fluxo HTTP de orçamento, execução, checkout e confirmação', async () => {
     const orderId = 'order-1';
     const estimateId = 'estimate-1';
     const attemptId = 'attempt-1';
     const key = '7a1fb88b-714d-4350-8abb-e437c441ab31';
     const apiKey = 'billing-e2e-key';
-    const oldKey = process.env.INTERNAL_API_KEY;
     process.env.INTERNAL_API_KEY = apiKey;
-    t.after(() => {
-        if (oldKey === undefined) delete process.env.INTERNAL_API_KEY;
-        else process.env.INTERNAL_API_KEY = oldKey;
-    });
 
     let estimateStatus = 'PENDING';
     let executed = false;
@@ -112,10 +118,9 @@ test('fluxo HTTP de orçamento, execução, checkout e confirmação', async t =
     });
 
     const app = createBillingApp(payments, estimates);
-    const server = await new Promise<ReturnType<typeof app.listen>>(resolve => {
+    server = await new Promise<ReturnType<typeof app.listen>>(resolve => {
         const listener = app.listen(0, '127.0.0.1', () => resolve(listener));
     });
-    t.after(() => new Promise<void>((resolve, reject) => server.close(error => error ? reject(error) : resolve())));
     const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     const headers = { 'content-type': 'application/json', 'x-internal-api-key': apiKey };
     const post = (path: string, body: object, extra: Record<string, string> = {}) =>
@@ -129,13 +134,13 @@ test('fluxo HTTP de orçamento, execução, checkout e confirmação', async t =
     assert.equal((await post(`${orders}/checkout`, {}, { 'idempotency-key': key })).status, 409);
     assert.equal((await post(`/internal/estimates/${estimateId}/decision`, { decision: 'APPROVED' })).status, 200);
     const approval = await fetch(`${base}${orders}/estimate-approval`, { headers });
-    assert.deepEqual(await approval.json(), { approved: true });
+    expect(await approval.json()).toEqual({ approved: true });
 
     assert.equal((await post(`${orders}/execution-complete`, { messageId: key })).status, 204);
     for (let count = 0; count < 2; count++) {
         const checkout = await post(`${orders}/checkout`, {}, { 'idempotency-key': key });
         assert.equal(checkout.status, 200);
-        assert.deepEqual(await checkout.json(), { id: attemptId, status: 'PENDING', checkoutUrl: 'https://example.test/checkout' });
+        expect(await checkout.json()).toEqual({ id: attemptId, status: 'PENDING', checkoutUrl: 'https://example.test/checkout' });
     }
     assert.equal(providerCalls, 1);
 
@@ -149,6 +154,6 @@ test('fluxo HTTP de orçamento, execução, checkout e confirmação', async t =
     assert.equal((await webhook()).status, 200);
     assert.equal((await webhook()).status, 200);
     const paid = await fetch(`${base}${orders}/payment-status`, { headers });
-    assert.deepEqual(await paid.json(), { paid: true });
+    expect(await paid.json()).toEqual({ paid: true });
     assert.deepEqual(events, ['payment.confirmed']);
 });

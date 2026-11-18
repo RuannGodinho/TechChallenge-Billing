@@ -1,5 +1,13 @@
 # Local RabbitMQ and asynchronous execution completion
 
+## Histórico de publicações por 24 horas
+
+Os workers declaram no broker existente as filas duráveis `audit.billing.events`, `audit.execution.events`, `audit.saga.commands` e `audit.saga.results`. Cada uma recebe cópias das rotas operacionais do exchange correspondente, com TTL de 24 horas (`86400000` ms), sem consumidor de aplicação. As cópias permanecem após o ACK na fila operacional; nenhuma infraestrutura ou pod adicional é criado, mas o armazenamento do broker passa a guardar essas cópias.
+
+Na AWS, abra `kubectl port-forward -n default deployment/rabbitmq-deployment 15672:15672` no Mac e acesse http://localhost:15672. Selecione o vhost e filtre as filas por `audit.`. Use Get messages com **requeue=true** para inspecionar sem remover a cópia; não use Purge. Confira exchange, routing key, message_id e os campos do JSON para correlacionar OS e tentativa.
+
+Esse histórico começa após a implantação e registra publicações, não confirmações de processamento. Retries publicados diretamente em `.retry` não passam pelos exchanges auditados. Correlacione com inbox/outbox, resultados da Saga e logs. O painel lê lotes de mensagens; não oferece pesquisa completa por OS ou histórico de ACKs.
+
 ## Start each repository independently
 
 Each repository owns its API, database, and workers. No startup script, profile flag, sibling directory, or checkout of another repository is required.

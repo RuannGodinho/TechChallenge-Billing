@@ -1,4 +1,3 @@
-import { test } from 'node:test';
 import { strict as assert } from 'node:assert';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -6,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { Pool } from 'pg';
 const { seedDatabase } = require(resolve('src/postgres-init/seed.js'));
 
-test('seed is idempotent and preserves an edited estimate without publishing events', { skip: !process.env.TEST_BILLING_PG_URL }, async () => {
+(process.env.TEST_BILLING_PG_URL ? test : test.skip)('seed is idempotent and preserves an edited estimate without publishing events', async () => {
   const admin = new Pool({ connectionString: process.env.TEST_BILLING_PG_URL });
   const schema = `seed_${randomUUID().replaceAll('-', '')}`;
   const pool = new Pool({ connectionString: process.env.TEST_BILLING_PG_URL, options: `-c search_path=${schema}` });
@@ -16,7 +15,7 @@ test('seed is idempotent and preserves an edited estimate without publishing eve
     await Promise.all([seedDatabase(pool), seedDatabase(pool)]);
     const rows = (await pool.query('SELECT * FROM estimates ORDER BY order_id')).rows;
     assert.equal(rows.length, 2);
-    assert.deepEqual(rows.map(row => Number(row.total_cents)), [36500, 40000]);
+    expect(rows.map(row => Number(row.total_cents))).toEqual([36500, 40000]);
     for (const row of rows) {
       assert.equal(Number(row.total_cents), row.items.reduce((sum: number, item: any) => sum + item.precoCents * item.quantidade, 0));
     }

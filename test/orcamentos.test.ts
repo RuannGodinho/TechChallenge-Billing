@@ -1,5 +1,4 @@
 import { strict as assert } from 'node:assert';
-import { test } from 'node:test';
 import { randomUUID } from 'node:crypto';
 import { readFile, readdir } from 'node:fs/promises';
 import { resolve } from 'node:path';
@@ -17,7 +16,7 @@ test('preserves the original Portuguese estimate response and currency units', (
     assert.deepEqual(result.pecas, []); assert.equal(result.itensServicos[0].preco, 150);
 });
 
-test('restores legacy estimate HTTP contracts against PostgreSQL', { skip: !process.env.TEST_BILLING_DATABASE_URL }, async () => {
+(process.env.TEST_BILLING_DATABASE_URL ? test : test.skip)('restores legacy estimate HTTP contracts against PostgreSQL', async () => {
     const connectionString = process.env.TEST_BILLING_DATABASE_URL;
     const admin = new Pool({ connectionString });
     const schema = `endpoint_migration_${process.pid}_${Date.now()}`;
@@ -27,7 +26,7 @@ test('restores legacy estimate HTTP contracts against PostgreSQL', { skip: !proc
     let server: ReturnType<express.Express['listen']> | undefined;
     try {
         await admin.query(`CREATE SCHEMA ${schema}`);
-        const migrations = resolve(__dirname, '../../migrations');
+        const migrations = resolve('migrations');
         for (const name of (await readdir(migrations)).filter(name => name.endsWith('.sql')).sort()) await pool.query(await readFile(resolve(migrations,name),'utf8'));
         const app = express(); app.use(express.json()); app.use('/api', createOrcamentoRoutes(createOrcamentoController(pool)));
         server = app.listen(0,'127.0.0.1'); await new Promise<void>(done => server!.once('listening',done));

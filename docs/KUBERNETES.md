@@ -1,5 +1,7 @@
 # Kubernetes — billing
 
+Cobertura de APM, logs das APIs/workers, implantação e consultas NRQL: [New Relic](NEW-RELIC.md).
+
 Imagem: ruanngodinho/techchallenge-billing. API: billing; workers: billing-workers; banco: postgres-deployment, mantido no infra-db.
 
 ## Organização e custo

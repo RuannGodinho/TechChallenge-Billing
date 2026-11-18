@@ -8,10 +8,17 @@ spec:
     language: nodejs
     image: 'newrelic/newrelic-node-init:13-nodejs20x'
     env:
+      - name: NEW_RELIC_APP_NAME
+        value: techchallenge-billing
       - name: NEW_RELIC_LOG
         value: stderr
       - name: NEW_RELIC_APPLICATION_LOGGING_FORWARDING_ENABLED
         value: 'false'
-  podLabelSelector:
+  namespaceLabelSelector:
     matchLabels:
-      app: billing
+      kubernetes.io/metadata.name: default
+  podLabelSelector:
+    matchExpressions:
+      - key: app
+        operator: In
+        values: [billing, billing-workers]

@@ -1,0 +1,33 @@
+flowchart TD
+    A["Service Orders cria OS RECEBIDA<br/>e Saga AGUARDANDO_DIAGNOSTICO"] --> B["Operador coloca a OS em diagnóstico<br/>e envia peças e serviços"]
+    B --> C["Billing cria e versiona o orçamento<br/>GERANDO_ORCAMENTO"]
+    C --> D{"Orçamento da tentativa<br/>aprovado dentro do prazo?"}
+    D -->|"Sim"| E["Execution reserva todas as peças<br/>RESERVANDO_ESTOQUE"]
+    E --> F["Execution prepara o lote<br/>PREPARANDO_EXECUCOES"]
+    F --> G["Execution efetiva a baixa e autoriza o lote<br/>AUTORIZANDO_EXECUCAO"]
+    G --> H["Saga CONCLUIDA<br/>Service Orders libera a OS EM EXECUCAO"]
+    H --> I["Execution valida a liberação<br/>e inicia os serviços"]
+    I --> J["Última execução concluída<br/>Worker publica execution.completed"]
+    J --> K["Service Orders marca FINALIZADA"]
+    J --> L["Billing registra a conclusão<br/>e habilita checkout para orçamento elegível"]
+    L --> MP["Sistema autorizado solicita checkout<br/>Cliente paga no Mercado Pago"]
+    MP --> W{"Billing confirma pagamento integral<br/>após validar webhook e consultar provedor?"}
+    W -->|"Sim"| M["Worker do Billing publica payment.confirmed"]
+    W -->|"Ainda não"| U["Entrega segue bloqueada"]
+    U -.->|"Nova notificação ou reconciliação"| W
+    K -.->|"Estado necessário para a entrega"| N{"OS FINALIZADA e pagamento<br/>continua confirmado no Billing?"}
+    M -->|"Consome e registra o evento"| N
+    N -->|"Sim"| O["Service Orders registra ENTREGUE"]
+    N -->|"Entrega ainda bloqueada"| P["Retém o evento para reavaliação periódica"]
+    P -.->|"Reavalia após finalização ou recuperação"| N
+
+    B -.->|"Cancelamento solicitado durante preparação"| Q["COMPENSANDO"]
+    C -.->|"Falha ou timeout"| Q
+    D -->|"Rejeitado ou expirado"| Q
+    E -.->|"Falha ou timeout"| Q
+    F -.->|"Falha ou timeout"| Q
+    G -.->|"Falha ou timeout"| Q
+    Q --> R["Cancela a preparação, libera reserva<br/>ou estorna baixa e invalida orçamento elegível"]
+    R -->|"Compensações confirmadas"| S["COMPENSADA<br/>OS retorna a EM DIAGNOSTICO"]
+    R -->|"Recusa ou prazo vencido"| T["INTERVENCAO_MANUAL"]
+    T -->|"Retomada autorizada após correção"| Q
